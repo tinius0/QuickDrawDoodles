@@ -29,10 +29,23 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
             y_batch_true = y_train_shuffled_one_hot[i:i + batch_size]
 
             #Forward pass batches
-            z1, a1, z2, a2, z3,a3,z4, output = model.forward_pass(x_batch, W1, b1, W2, b2, W3, b3, W4, b4)
+            z1, a1, dm1, z2, a2, dm2, z3, a3, dm3, z4, output = model.forward_pass(x_batch, W1, b1, W2, b2, W3, b3, W4, b4, dropout_rate=0.2, training=True)
 
             #Calculate loss / backward propagation
-            dW1, db1, dW2, db2,dW3,db3,dW4,db4 = model.backward_propagatation(x_batch, y_batch_true,z1, a1, z2, a2,z3,a3,z4, output, W2,W3,W4)
+            dW1, db1, dW2, db2, dW3, db3, dW4, db4 = model.backward_propagatation(
+                x_batch, y_batch_true,
+                z1, a1, dm1,
+                z2, a2, dm2,
+                z3, a3, dm3,
+                z4, output,
+                W2, W3, W4,
+                dropout_rate=0.2   
+            )   
+
+            #Clip gradients
+            gradients = [dW1, db1, dW2, db2, dW3, db3, dW4, db4]
+            clipped_gradients = model.clip_gradients(gradients, clip_value=1.0)
+            dW1, db1, dW2, db2, dW3, db3, dW4, db4 = clipped_gradients
 
             #Update the weights and biases
             W1 -= learning_rate * dW1
@@ -44,12 +57,12 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
             W4 -= learning_rate * dW4
             b4 -= learning_rate * db4
 
-        _,_,_,_,_,_,_, train_output = model.forward_pass(X_train, W1, b1, W2, b2, W3, b3,W4,b4)
+        *_, train_output = model.forward_pass(X_train, W1, b1, W2, b2, W3, b3, W4, b4, dropout_rate=0.0, training=False)
         train_loss = model.cross_entropy(y_train_one_hot, train_output)
         train_accuracy = np.mean(np.argmax(train_output, axis=1) == y_train)
 
 
-        _,_,_,_,_,_,_, test_output = model.forward_pass(X_test, W1, b1, W2, b2, W3, b3,W4,b4)
+        *_, test_output = model.forward_pass(X_test, W1, b1, W2, b2, W3, b3, W4, b4, dropout_rate=0.0, training=False)
         test_loss = model.cross_entropy(y_test_one_hot, test_output)
         test_accuracy = np.mean(np.argmax(test_output, axis=1) == y_test)
 

@@ -15,7 +15,7 @@ if __name__ == "__main__":
     output_size = 10 #345 when the quickdraw dataset is used
     learning_rate = 0.05
     epochs = 10 #Consider implementing early stopping
-    batch_size = 64
+    batch_size = 128
 
     trained_W1, trained_b1, trained_W2, trained_b2,trained_W3,trained_b3,trained_W4,trained_b4 = trainModel.train_model(
         x_train, y_train_raw,
