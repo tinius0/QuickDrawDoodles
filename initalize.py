@@ -9,17 +9,18 @@ if __name__ == "__main__":
 
     #Play around with the parameters here
     input_size = x_train.shape[1]
-    hidden_size = 128
-    hidden2_size = 64
-    output_size = 10
+    hidden_size = 512
+    hidden2_size = 256
+    hidden3_size = 128
+    output_size = 10 #345 when the quickdraw dataset is used
     learning_rate = 0.05
     epochs = 10 #Consider implementing early stopping
     batch_size = 64
 
-    trained_W1, trained_b1, trained_W2, trained_b2,trained_W3,trained_b3 = trainModel.train_model(
+    trained_W1, trained_b1, trained_W2, trained_b2,trained_W3,trained_b3,trained_W4,trained_b4 = trainModel.train_model(
         x_train, y_train_raw,
         x_test, y_test_raw,
-        input_size, hidden_size,hidden2_size, output_size,
+        input_size, hidden_size,hidden2_size,hidden3_size, output_size,
         epochs, learning_rate, batch_size
     )
 

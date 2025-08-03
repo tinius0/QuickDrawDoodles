@@ -3,7 +3,7 @@ import numpy as np
 import pickle  # Used to save the trained model
 import visualizeTraining as vt
 
-def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden2_size, output_size, epochs, learning_rate, batch_size):
+def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden2_size,hidden3_size, output_size, epochs, learning_rate, batch_size):
     y_train_one_hot = model.one_hot_encode(y_train, output_size)
     y_test_one_hot = model.one_hot_encode(y_test, output_size)
     train_losses = []
@@ -12,7 +12,7 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
     test_accuracies = []
 
     #Initialize parameters
-    W1,b1,W2,b2,W3,b3 = model.init_params(input_size, hidden_size,hidden2_size, output_size)
+    W1,b1,W2,b2,W3,b3,W4,b4 = model.init_params(input_size, hidden_size,hidden2_size,hidden3_size, output_size)
 
     num_training_samples = X_train.shape[0]
 
@@ -29,10 +29,10 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
             y_batch_true = y_train_shuffled_one_hot[i:i + batch_size]
 
             #Forward pass batches
-            z1, a1, z2, a2, z3, output = model.forward_pass(x_batch, W1, b1, W2, b2, W3, b3)
+            z1, a1, z2, a2, z3,a3,z4, output = model.forward_pass(x_batch, W1, b1, W2, b2, W3, b3, W4, b4)
 
             #Calculate loss / backward propagation
-            dW1, db1, dW2, db2,dW3,db3 = model.backward_propagatation(x_batch, y_batch_true,z1, a1, z2, a2,z3, output, W2,W3)
+            dW1, db1, dW2, db2,dW3,db3,dW4,db4 = model.backward_propagatation(x_batch, y_batch_true,z1, a1, z2, a2,z3,a3,z4, output, W2,W3,W4)
 
             #Update the weights and biases
             W1 -= learning_rate * dW1
@@ -41,13 +41,15 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
             b2 -= learning_rate * db2
             b3 -= learning_rate * db3
             W3 -= learning_rate * dW3
+            W4 -= learning_rate * dW4
+            b4 -= learning_rate * db4
 
-        _,_,_,_,_, train_output = model.forward_pass(X_train, W1, b1, W2, b2, W3, b3)
+        _,_,_,_,_,_,_, train_output = model.forward_pass(X_train, W1, b1, W2, b2, W3, b3,W4,b4)
         train_loss = model.cross_entropy(y_train_one_hot, train_output)
         train_accuracy = np.mean(np.argmax(train_output, axis=1) == y_train)
 
 
-        _,_,_,_,_, test_output = model.forward_pass(X_test, W1, b1, W2, b2, W3, b3)
+        _,_,_,_,_,_,_, test_output = model.forward_pass(X_test, W1, b1, W2, b2, W3, b3,W4,b4)
         test_loss = model.cross_entropy(y_test_one_hot, test_output)
         test_accuracy = np.mean(np.argmax(test_output, axis=1) == y_test)
 
@@ -59,8 +61,8 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
         test_accuracies.append(test_accuracy)
 
         # Save trained weights to file
-        with open("ParametersAndTrainingData/trained_model.pkl", "wb") as f:
-            pickle.dump((W1, b1, W2, b2,W3,b3), f)
+        with open("trained_model.pkl", "wb") as f:
+            pickle.dump((W1, b1, W2, b2,W3,b3,W4,b4), f)
 
     print("Training complete. Model saved to 'trained_model.pkl'.")
     vt.plot_training_progress(
@@ -70,4 +72,4 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
         val_accuracies=test_accuracies
     )
 
-    return W1, b1, W2, b2, W3, b3
+    return W1, b1, W2, b2, W3, b3, W4, b4

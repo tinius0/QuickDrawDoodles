@@ -21,17 +21,20 @@ def load_mnist_labels():
     #Remember to one-hot encode the labels
     return y_train, y_test
 
-def init_params(input_size, hidden_size,hidden2_size, output_size):
+#512,256,128 Out: 345
+def init_params(input_size, hidden_size,hidden2_size,hidden3_size, output_size):
     W1 = np.random.randn(input_size, hidden_size) * 0.01 
     b1 = np.zeros((1, hidden_size)) 
 
     W2 = np.random.randn(hidden_size, hidden2_size) * 0.01  
     b2 = np.zeros((1, hidden2_size))
 
-    W3 = np.random.randn(hidden2_size, output_size) *0.01
-    b3 = np.zeros((1, output_size))
+    W3 = np.random.randn(hidden2_size, hidden3_size) *0.01
+    b3 = np.zeros((1, hidden3_size))
 
-    return W1, b1, W2, b2,W3, b3
+    W4 = np.random.randn(hidden3_size, output_size) * 0.01
+    b4 = np.zeros((1, output_size))
+    return W1, b1, W2, b2,W3, b3,W4,b4
 
 #RELU activation function
 def relu(x):
@@ -41,7 +44,7 @@ def relu_derivative(x):
 
 
 #Forward pass finding the output from previous layer and input for the next layer
-def forward_pass(X,W1,b1,W2,b2,W3,b3):
+def forward_pass(X,W1,b1,W2,b2,W3,b3,W4,b4):
     z1 = np.dot(X,W1)+ b1 
     a1 = relu(z1) #Compress the matrix multiplication result to a value between 0 and 1
 
@@ -49,8 +52,11 @@ def forward_pass(X,W1,b1,W2,b2,W3,b3):
     a2 = relu(z2)
 
     z3 = np.dot(a2,W3) +b3
-    output = softmax(z3)
-    return z1,a1,z2,a2,z3, output
+    a3 = relu(z3)
+
+    z4 = np.dot(a3,W4) + b4
+    output = softmax(z4)  #Softmax activation for the output layer
+    return z1,a1,z2,a2,z3,a3,z4, output
 
 #Output layer activation function
 def softmax(x):
@@ -65,10 +71,14 @@ def cross_entropy(y_true, y_pred):
     return loss
 
 # Backward propagation to update the weights and biases
-def backward_propagatation(X, y_true, z1, a1, z2, a2, z3, output, W2, W3):
+def backward_propagatation(X, y_true, z1, a1, z2, a2, z3,a3,z4, output, W2, W3,W4):
     m = X.shape[0]
 
-    delta3 = output - y_true
+    delta4 = output - y_true
+    dW4 = np.dot(a3.T, delta4) / m
+    db4 = np.sum(delta4, axis=0, keepdims=True) / m
+
+    delta3 = np.dot(delta4, W4.T) * relu_derivative(z3)
     dW3 = np.dot(a2.T, delta3) / m
     db3 = np.sum(delta3, axis=0, keepdims=True) / m
 
@@ -80,5 +90,5 @@ def backward_propagatation(X, y_true, z1, a1, z2, a2, z3, output, W2, W3):
     dW1 = np.dot(X.T, delta1) / m
     db1 = np.sum(delta1, axis=0, keepdims=True) / m
 
-    return dW1, db1, dW2, db2, dW3, db3
+    return dW1, db1, dW2, db2, dW3, db3, dW4, db4
 
