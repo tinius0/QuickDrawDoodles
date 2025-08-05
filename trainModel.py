@@ -1,7 +1,7 @@
-import model
+from . import model
 import numpy as np
-import pickle  # Used to save the trained model
 import visualizeTraining as vt
+
 
 def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden2_size,hidden3_size, output_size, epochs, learning_rate, batch_size):
     y_train_one_hot = model.one_hot_encode(y_train, output_size)
@@ -50,12 +50,16 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
             #Update the weights and biases
             W1 -= learning_rate * dW1
             b1 -= learning_rate * db1
+
             W2 -= learning_rate * dW2
             b2 -= learning_rate * db2
-            b3 -= learning_rate * db3
+
             W3 -= learning_rate * dW3
+            b3 -= learning_rate * db3
+
             W4 -= learning_rate * dW4
             b4 -= learning_rate * db4
+
 
         *_, train_output = model.forward_pass(X_train, W1, b1, W2, b2, W3, b3, W4, b4, dropout_rate=0.0, training=False)
         train_loss = model.cross_entropy(y_train_one_hot, train_output)
@@ -73,9 +77,6 @@ def train_model(X_train, y_train, X_test, y_test, input_size, hidden_size,hidden
         train_accuracies.append(train_accuracy)
         test_accuracies.append(test_accuracy)
 
-        # Save trained weights to file
-        with open("trained_model.pkl", "wb") as f:
-            pickle.dump((W1, b1, W2, b2,W3,b3,W4,b4), f)
 
     print("Training complete. Model saved to 'trained_model.pkl'.")
     vt.plot_training_progress(

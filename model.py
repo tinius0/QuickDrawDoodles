@@ -1,7 +1,17 @@
-import numpy as np
-from keras.datasets import mnist
-
-mnistDataSet = mnist.load_data()
+import numpy as np 
+import Model.loadDataSet as loadDataSet 
+import os
+def load_quickdraw_dataset(folder_path, class_names, max_per_class=1000):
+    X = []
+    y = []
+    for i, class_name in enumerate(class_names):
+        filepath = os.path.join(folder_path, f"{class_name}.ndjson")
+        images = loadDataSet.load_quickdraw_ndjson(filepath, max_items=max_per_class)
+        X.append(images)
+        y.append(np.full(len(images), i))
+    X = np.concatenate(X, axis=0)
+    y = np.concatenate(y, axis=0)
+    return X, y
 
 #helper function to one-hot encode the labels
 def one_hot_encode(labels, num_classes):
@@ -9,30 +19,19 @@ def one_hot_encode(labels, num_classes):
     one_hot = np.zeros((num_labels, num_classes))
     one_hot[np.arange(num_labels), labels] = 1
     return one_hot
-# Load the MNIST dataset from mnistDataSet variable
-def load_mnist_images():
-    (x_train, _), (x_test, _) = mnistDataSet
-    x_train = x_train.reshape(-1, 28*28) / 255.0
-    x_test = x_test.reshape(-1, 28*28) / 255.0
-    return x_train, x_test
 
-def load_mnist_labels():
-    (_, y_train), (_, y_test) = mnistDataSet
-    #Remember to one-hot encode the labels
-    return y_train, y_test
-
-#512,256,128 Out: 345
+#512,256,128 output: 25
 def init_params(input_size, hidden_size,hidden2_size,hidden3_size, output_size):
     W1 = np.random.randn(input_size, hidden_size) * np.sqrt(2. / input_size) 
     b1 = np.zeros((1, hidden_size)) 
 
-    W2 = np.random.randn(hidden_size, hidden2_size) *  np.sqrt(2. / input_size) 
+    W2 = np.random.randn(hidden_size, hidden2_size) *  np.sqrt(2. / hidden_size) 
     b2 = np.zeros((1, hidden2_size))
 
-    W3 = np.random.randn(hidden2_size, hidden3_size) * np.sqrt(2. / input_size)
+    W3 = np.random.randn(hidden2_size, hidden3_size) * np.sqrt(2. / hidden2_size)
     b3 = np.zeros((1, hidden3_size))
 
-    W4 = np.random.randn(hidden3_size, output_size) *  np.sqrt(2. / input_size)
+    W4 = np.random.randn(hidden3_size, output_size) *  np.sqrt(2. / hidden3_size)
     b4 = np.zeros((1, output_size))
     return W1, b1, W2, b2,W3, b3,W4,b4
 
