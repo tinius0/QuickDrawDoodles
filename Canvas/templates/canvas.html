@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Draw & Predict</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <h1>Draw Something</h1>
+    <canvas id="canvas" width="280" height="280"></canvas><br>
+    <button id="clearBtn">Clear</button>
+    <button id="predictBtn">Predict</button>
+    <div id="result"></div>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
