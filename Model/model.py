@@ -1,248 +1,238 @@
-import numpy as np 
-import loadDataSet 
-import os
-from sklearn.model_selection import train_test_split
+import numpy as np
 
-# Helper functions for the CNN layers
-def conv_forward(X, W, b, stride=1, pad=2):
-    n, h, w, c = X.shape
-    num_filters, filter_h, filter_w, c = W.shape
-    
-    out_h = int(1 + (h + 2 * pad - filter_h) / stride)
-    out_w = int(1 + (w + 2 * pad - filter_w) / stride)
+# ------------------------------
+# Utility functions
+# ------------------------------
+def one_hot_encode(y, num_classes):
+    y_encoded = np.zeros((len(y), num_classes), dtype=np.float32)
+    y_encoded[np.arange(len(y)), y] = 1.0
+    return y_encoded
 
-    X_pad = np.pad(X, ((0, 0), (pad, pad), (pad, pad), (0, 0)), 'constant')
-    out = np.zeros((n, out_h, out_w, num_filters))
+def softmax(x):
+    e_x = np.exp(x - np.max(x, axis=1, keepdims=True))
+    return e_x / np.sum(e_x, axis=1, keepdims=True)
 
-    for i in range(out_h):
-        for j in range(out_w):
-            X_slice = X_pad[:, i*stride:i*stride+filter_h, j*stride:j*stride+filter_w, :]
-            for k in range(num_filters):
-                out[:, i, j, k] = np.sum(X_slice * W[k, :, :, :], axis=(1, 2, 3)) + b[k]
-    return out
-
-# Max pooling layer to reduce dimensions and extract features from the previous layer
-def max_pool_forward(X, pool_h=2, pool_w=2, stride=2):
-    n, h, w, c = X.shape
-    out_h = int(1 + (h - pool_h) / stride)
-    out_w = int(1 + (w - pool_w) / stride)
-    
-    out = np.zeros((n, out_h, out_w, c))
-
-    for i in range(out_h):
-        for j in range(out_w):
-            X_slice = X[:, i*stride:i*stride+pool_h, j*stride:j*stride+pool_w, :]
-            out[:, i, j, :] = np.max(X_slice, axis=(1, 2))
-    return out
-
-
-def load_quickdraw_dataset(folder_path, class_names, max_per_class=30000):
-    X = []
-    y = []
-    for i, class_name in enumerate(class_names):
-        filepath = os.path.join(folder_path, f"{class_name}.ndjson")
-        images = loadDataSet.load_quickdraw_ndjson(filepath, max_items=max_per_class)
-        X.append(images)
-        y.append(np.full(len(images), i))
-    X = np.concatenate(X, axis=0)
-    y = np.concatenate(y, axis=0)
-    X = X.astype(np.float32)  
-    return X, y
-
-#helper function to one-hot encode the labels
-def one_hot_encode(labels, num_classes):
-    num_labels = labels.shape[0]
-    one_hot = np.zeros((num_labels, num_classes))
-    one_hot[np.arange(num_labels), labels] = 1
-    return one_hot
-
-#Heuristic initialization for weights, using He initialization
-def he_init(shape):
-    fan_in = shape[0]
-    return np.random.randn(*shape) * np.sqrt(2. / fan_in)
-
-
-#512,256,128 output: 3
-def init_params(input_size, hidden_size,hidden2_size,hidden3_size, output_size,num_filters):
-    # CNN Layer parameters
-    conv_filter_h, conv_filter_w = 5, 5
-    W_conv = np.random.randn(num_filters, conv_filter_h, conv_filter_w, 1) * np.sqrt(2. / (5 * 5 * 1))
-    b_conv = np.zeros(num_filters)
-    
-    # Calculate the size of the output from the CNN layers
-    conv_out_h = int(1 + (28 + 2 * 2 - 5) / 1)
-    conv_out_w = int(1 + (28 + 2 * 2 - 5) / 1)
-    
-    # After max pooling 
-    pool_out_h = int(1 + (conv_out_h - 2) / 2)
-    pool_out_w = int(1 + (conv_out_w - 2) / 2)
-    
-    # The flattened size is the input to the first dense layer
-    flattened_size = pool_out_h * pool_out_w * num_filters
-
-    #Initialize weights and biases for the dense layers
-    W1 = he_init((flattened_size, hidden_size))  
-    b1 = np.zeros((1, hidden_size))
-
-    W2 = he_init((hidden_size, hidden2_size))
-    b2 = np.zeros((1, hidden2_size))
-
-    W3 = he_init((hidden2_size, hidden3_size))
-    b3 = np.zeros((1, hidden3_size))
-
-    #Xavier initialization for output layer
-    W4 = np.random.randn(hidden3_size, output_size) * np.sqrt(1. / hidden3_size)
-    b4 = np.zeros((1, output_size))
-
-    return W_conv, b_conv, W1, b1, W2, b2, W3, b3, W4, b4
-
-#RELU activation function
 def relu(x):
-    return np.maximum(0,x)
+    return np.maximum(0, x)
 
 def relu_derivative(x):
-    return (x > 0).astype(float)
+    return (x > 0).astype(np.float32)
 
-#Dropout function to prevent overfitting, removes a percentage of neurons every iteration
-def dropout(a, dropout_rate):
-    if dropout_rate == 0.0:
-        return a, np.ones_like(a, dtype=np.float32)
-    mask = (np.random.rand(*a.shape) > dropout_rate).astype(np.float32)
-    mask = mask / (1.0 - dropout_rate)   # scale the mask
-    return a * mask, mask
-
-#Forward pass finding the output from previous layer and input for the next layer
-#Setting dropout_rate to 0.2 by default, can be changed in the training script
-def forward_pass(X, W_conv, b_conv, W1, b1, W2, b2, W3, b3, W4, b4, dropout_rate=0.3, training=True):
-    X_reshaped = X.reshape(-1, 28, 28, 1)
-    Z_conv = conv_forward(X_reshaped, W_conv, b_conv)
-    A_conv = relu(Z_conv)
-    A_pool = max_pool_forward(A_conv)
-    flattened = A_pool.reshape(A_pool.shape[0], -1)
-
-    z1 = np.dot(flattened, W1) + b1
-    a1 = relu(z1)
-    if training and dropout_rate > 0.0:
-        a1, dropout_mask1 = dropout(a1, dropout_rate)
-    else:
-        dropout_mask1 = np.ones_like(a1)
-
-    z2 = np.dot(a1, W2) + b2
-    a2 = relu(z2)
-    if training and dropout_rate > 0.0:
-        a2, dropout_mask2 = dropout(a2, dropout_rate)
-    else:
-        dropout_mask2 = np.ones_like(a2)
-
-    z3 = np.dot(a2, W3) + b3
-    a3 = relu(z3)
-    if training and dropout_rate > 0.0:
-        a3, dropout_mask3 = dropout(a3, dropout_rate)
-    else:
-        dropout_mask3 = np.ones_like(a3)
-
-    z4 = np.dot(a3, W4) + b4
-    output = softmax(z4)
-
-    return X_reshaped, Z_conv, A_conv, A_pool, flattened, z1, a1, dropout_mask1, z2, a2, dropout_mask2, z3, a3, dropout_mask3, z4, output
-
-
-#Output layer activation function
-def softmax(x):
-    exp_x = np.exp(x - np.max(x, axis=1, keepdims=True))
-    return exp_x / np.sum(exp_x, axis=1, keepdims=True)
-
-#Cross-entropy to fine tune the model, calculating the loss
 def cross_entropy(y_true, y_pred):
-    epsilon = 1e-12
-    y_pred = np.clip(y_pred, epsilon, 1. - epsilon)
-    loss = -np.sum(y_true * np.log(y_pred)) / y_true.shape[0]
-    return loss
+    eps = 1e-8
+    y_pred = np.clip(y_pred, eps, 1-eps)
+    return -np.mean(np.sum(y_true * np.log(y_pred), axis=1))
 
-#QuickDraw is a noisy dataset, so we implement gradient clipping to prevent huge gradients
-def clip_gradients(gradients, clip_value):
-    total_norm = 0
-    for gradient in gradients:
-        total_norm += np.sum(np.square(gradient))
-    total_norm = np.sqrt(total_norm)
+def clip_gradients(grads, max_norm):
+    for k in grads.keys():
+        grads[k] = np.clip(grads[k], -max_norm, max_norm)
+    return grads
 
-    if total_norm > clip_value:
-        scaling_factor = clip_value / total_norm
-        return [grad * scaling_factor for grad in gradients]
-    return gradients
+# ------------------------------
+# Parameter initialization
+# ------------------------------
+def init_params(input_shape, conv_filters, hidden_sizes, output_size, kernel_size=3):
+    """
+    input_shape: (channels, H, W)
+    conv_filters: list of 3 numbers [num_filters1, num_filters2, num_filters3]
+    hidden_sizes: list of 3 numbers [hidden1, hidden2, hidden3]
+    """
+    params = {}
+    c, h, w = input_shape
+    # Convolution layers
+    params['W_conv1'] = np.random.randn(conv_filters[0], c, kernel_size, kernel_size).astype(np.float32) * 0.01
+    params['b_conv1'] = np.zeros(conv_filters[0], dtype=np.float32)
+    
+    params['W_conv2'] = np.random.randn(conv_filters[1], conv_filters[0], kernel_size, kernel_size).astype(np.float32) * 0.01
+    params['b_conv2'] = np.zeros(conv_filters[1], dtype=np.float32)
+    
+    params['W_conv3'] = np.random.randn(conv_filters[2], conv_filters[1], kernel_size, kernel_size).astype(np.float32) * 0.01
+    params['b_conv3'] = np.zeros(conv_filters[2], dtype=np.float32)
+    
+    # Compute flattened size after 3 conv layers (assuming stride=1, padding=0, 2x2 pooling)
+    def conv_out(size, k=kernel_size, stride=1, pad=0):
+        return (size - k + 2*pad)//stride + 1
+    def pool_out(size, pool=2):
+        return size // pool
 
-# Backward propagation to update the weights and biases
-def backward_propagation(X_reshaped, Z_conv, A_conv, A_pool, flattened, Z1, A1, dropout_mask1, Z2, A2, dropout_mask2, Z3, A3, dropout_mask3, Z4, output, y_true, W_conv, b_conv, W1, W2, W3, W4, b1, b2, b3, b4, dropout_rate):
+    h1 = pool_out(conv_out(h))
+    w1 = pool_out(conv_out(w))
+    h2 = pool_out(conv_out(h1))
+    w2 = pool_out(conv_out(w1))
+    h3 = pool_out(conv_out(h2))
+    w3 = pool_out(conv_out(w2))
+    flat_size = conv_filters[2]*h3*w3
 
-    m = y_true.shape[0]
-    dZ4 = (output - y_true) / m
+    # Fully connected layers
+    params['W1'] = np.random.randn(flat_size, hidden_sizes[0]).astype(np.float32) * np.sqrt(2/flat_size)
+    params['b1'] = np.zeros(hidden_sizes[0], dtype=np.float32)
+    params['W2'] = np.random.randn(hidden_sizes[0], hidden_sizes[1]).astype(np.float32) * np.sqrt(2/hidden_sizes[0])
+    params['b2'] = np.zeros(hidden_sizes[1], dtype=np.float32)
+    params['W3'] = np.random.randn(hidden_sizes[1], hidden_sizes[2]).astype(np.float32) * np.sqrt(2/hidden_sizes[1])
+    params['b3'] = np.zeros(hidden_sizes[2], dtype=np.float32)
+    params['W4'] = np.random.randn(hidden_sizes[2], output_size).astype(np.float32) * np.sqrt(2/hidden_sizes[2])
+    params['b4'] = np.zeros(output_size, dtype=np.float32)
 
-    dW4 = np.dot(A3.T, dZ4)
-    db4 = np.sum(dZ4, axis=0, keepdims=True)
-    dA3 = np.dot(dZ4, W4.T)
+    return params
 
-    if dropout_rate > 0.0:
-        dA3 *= dropout_mask3
-    dZ3 = dA3 * relu_derivative(Z3)
+# ------------------------------
+# Convolution helper
+# ------------------------------
+def conv2d(X, W, b, stride=1, padding=0):
+    batch, in_c, h, w = X.shape
+    out_c, _, kh, kw = W.shape
+    h_out = (h - kh + 2*padding)//stride + 1
+    w_out = (w - kw + 2*padding)//stride + 1
+    X_pad = np.pad(X, ((0,0),(0,0),(padding,padding),(padding,padding)), mode='constant')
+    out = np.zeros((batch, out_c, h_out, w_out), dtype=np.float32)
+    for n in range(batch):
+        for c in range(out_c):
+            for i in range(h_out):
+                for j in range(w_out):
+                    patch = X_pad[n,:, i*stride:i*stride+kh, j*stride:j*stride+kw]
+                    out[n,c,i,j] = np.sum(patch*W[c]) + b[c]
+    return out
 
-    dW3 = np.dot(A2.T, dZ3)
-    db3 = np.sum(dZ3, axis=0, keepdims=True)
-    dA2 = np.dot(dZ3, W3.T)
+def max_pool(X, size=2):
+    batch, c, h, w = X.shape
+    h_out = h//size
+    w_out = w//size
+    out = np.zeros((batch,c,h_out,w_out), dtype=np.float32)
+    for i in range(h_out):
+        for j in range(w_out):
+            patch = X[:,:, i*size:i*size+size, j*size:j*size+size]
+            out[:,:,i,j] = np.max(patch, axis=(2,3))
+    return out
 
-    if dropout_rate > 0.0:
-        dA2 *= dropout_mask2
-    dZ2 = dA2 * relu_derivative(Z2)
+# ------------------------------
+# Forward pass
+# ------------------------------
+def forward_pass(X, params):
+    caches = {}
+    caches['X'] = X
+    # Conv1
+    Z1 = conv2d(X, params['W_conv1'], params['b_conv1'])
+    A1 = relu(Z1)
+    P1 = max_pool(A1)
+    caches.update({'Z1': Z1, 'A1': A1, 'P1': P1})
 
-    dW2 = np.dot(A1.T, dZ2)
-    db2 = np.sum(dZ2, axis=0, keepdims=True)
-    dA1 = np.dot(dZ2, W2.T)
+    # Conv2
+    Z2 = conv2d(P1, params['W_conv2'], params['b_conv2'])
+    A2 = relu(Z2)
+    P2 = max_pool(A2)
+    caches.update({'Z2': Z2, 'A2': A2, 'P2': P2})
 
-    if dropout_rate > 0.0:
-        dA1 *= dropout_mask1
-    dZ1 = dA1 * relu_derivative(Z1)
+    # Conv3
+    Z3 = conv2d(P2, params['W_conv3'], params['b_conv3'])
+    A3 = relu(Z3)
+    P3 = max_pool(A3)
+    caches.update({'Z3': Z3, 'A3': A3, 'P3': P3})
 
-    dW1 = np.dot(flattened.T, dZ1)
-    db1 = np.sum(dZ1, axis=0, keepdims=True)
+    # Flatten
+    batch = X.shape[0]
+    flat = P3.reshape(batch, -1)
+    caches['flat'] = flat
 
-    # Gradient for flattened input from the pool layer
-    dflattened = np.dot(dZ1, W1.T)
+    # Fully connected layers
+    Z_fc1 = flat @ params['W1'] + params['b1']
+    A_fc1 = relu(Z_fc1)
+    Z_fc2 = A_fc1 @ params['W2'] + params['b2']
+    A_fc2 = relu(Z_fc2)
+    Z_fc3 = A_fc2 @ params['W3'] + params['b3']
+    A_fc3 = relu(Z_fc3)
+    Z_out = A_fc3 @ params['W4'] + params['b4']
+    A_out = softmax(Z_out)
+    caches.update({
+        'Z_fc1': Z_fc1, 'A_fc1': A_fc1,
+        'Z_fc2': Z_fc2, 'A_fc2': A_fc2,
+        'Z_fc3': Z_fc3, 'A_fc3': A_fc3,
+        'Z_out': Z_out, 'A_out': A_out
+    })
+    return caches
+# ------------------------------
+# Backward pass helpers
+# ------------------------------
+def softmax_cross_entropy_derivative(A_out, Y):
+    return (A_out - Y) / Y.shape[0]
 
-    # Reshape gradient to shape of A_pool
-    dA_pool = dflattened.reshape(A_pool.shape)
+def relu_back(dA, Z):
+    return dA * (Z > 0)
 
-    # Backprop max pooling
-    dA_conv = np.zeros_like(A_conv)
-    pool_h, pool_w, stride = 2, 2, 2
-    n, out_h, out_w, c = A_pool.shape
-    for i in range(out_h):
-        for j in range(out_w):
-            slice_ = A_conv[:, i*stride:i*stride+pool_h, j*stride:j*stride+pool_w, :]
-            max_mask = (slice_ == np.max(slice_, axis=(1,2), keepdims=True))
-            dA_conv[:, i*stride:i*stride+pool_h, j*stride:j*stride+pool_w, :] += dA_pool[:, i:i+1, j:j+1, :] * max_mask
+def flatten_backward(dout, original_shape):
+    return dout.reshape(original_shape)
 
-    # Backprop conv relu
-    dZ_conv = dA_conv * relu_derivative(Z_conv)
+def max_pool_backward(dA, A, size=2):
+    batch, c, h_out, w_out = dA.shape
+    dX = np.zeros_like(A, dtype=np.float32)
+    for i in range(h_out):
+        for j in range(w_out):
+            patch = A[:, :, i*size:i*size+size, j*size:j*size+size]
+            mask = (patch == np.max(patch, axis=(2,3), keepdims=True))
+            dX[:, :, i*size:i*size+size, j*size:j*size+size] += mask * dA[:, :, i, j][:, :, None, None]
+    return dX
 
-    # Gradients for conv weights and biases
-    n, h, w, c = X_reshaped.shape
-    num_filters, filter_h, filter_w, c = W_conv.shape
+def conv2d_backward(dout, X, W, stride=1, padding=0):
+    batch, in_c, h, w = X.shape
+    out_c, _, kh, kw = W.shape
+    h_out, w_out = dout.shape[2], dout.shape[3]
+    X_pad = np.pad(X, ((0,0),(0,0),(padding,padding),(padding,padding)), mode='constant')
+    dX_pad = np.zeros_like(X_pad)
+    dW = np.zeros_like(W)
+    db = np.zeros_like(W[:,0,0,0])
+    for n in range(batch):
+        for c in range(out_c):
+            for i in range(h_out):
+                for j in range(w_out):
+                    patch = X_pad[n, :, i*stride:i*stride+kh, j*stride:j*stride+kw]
+                    dW[c] += dout[n, c, i, j] * patch
+                    dX_pad[n, :, i*stride:i*stride+kh, j*stride:j*stride+kw] += dout[n, c, i, j] * W[c]
+            db[c] += np.sum(dout[n, c])
+    if padding > 0:
+        dX = dX_pad[:, :, padding:-padding, padding:-padding]
+    else:
+        dX = dX_pad
+    return dX, dW, db
+def backward_pass(caches, params, Y):
+    grads = {}
 
-    dW_conv = np.zeros_like(W_conv)
-    db_conv = np.zeros_like(b_conv)
+    # Output layer
+    dZ_out = softmax_cross_entropy_derivative(caches['A_out'], Y)
+    grads['W4'] = caches['A_fc3'].T @ dZ_out
+    grads['b4'] = np.sum(dZ_out, axis=0)
+    dA3 = dZ_out @ params['W4'].T
 
-    X_pad = np.pad(X_reshaped, ((0,0),(2,2),(2,2),(0,0)), 'constant')
-    dZ_pad = np.pad(dZ_conv, ((0,0),(2,2),(2,2),(0,0)), 'constant')
+    # FC3
+    dZ3 = relu_back(dA3, caches['Z_fc3'])
+    grads['W3'] = caches['A_fc2'].T @ dZ3
+    grads['b3'] = np.sum(dZ3, axis=0)
+    dA2 = dZ3 @ params['W3'].T
 
-    for k in range(num_filters):
-        for i in range(dZ_conv.shape[1]):
-            for j in range(dZ_conv.shape[2]):
-                X_slice = X_pad[:, i:i+filter_h, j:j+filter_w, :]
-                dZ_slice = dZ_conv[:, i, j, k][:, None, None, None]
-                dW_conv[k, :, :, :] += np.sum(X_slice * dZ_slice, axis=0)
+    # FC2
+    dZ2 = relu_back(dA2, caches['Z_fc2'])
+    grads['W2'] = caches['A_fc1'].T @ dZ2
+    grads['b2'] = np.sum(dZ2, axis=0)
+    dA1 = dZ2 @ params['W2'].T
 
-        db_conv[k] = np.sum(dZ_conv[:, :, :, k])
+    # FC1
+    dZ1 = relu_back(dA1, caches['Z_fc1'])
+    grads['W1'] = caches['flat'].T @ dZ1
+    grads['b1'] = np.sum(dZ1, axis=0)
+    dflat = dZ1 @ params['W1'].T
 
-    return dW_conv, db_conv, dW1, db1, dW2, db2, dW3, db3, dW4, db4
+    # Reshape back to conv output
+    dP3 = flatten_backward(dflat, caches['P3'].shape)
+    dA3_conv = max_pool_backward(dP3, caches['A3'])
+    dZ3_conv = relu_back(dA3_conv, caches['Z3'])
+    dP2, grads['W_conv3'], grads['b_conv3'] = conv2d_backward(dZ3_conv, caches['P2'], params['W_conv3'])
 
-def update_params(params, grads, learning_rate):
-    return [param - learning_rate * grad for param, grad in zip(params, grads)]
+    dA2_conv = max_pool_backward(dP2, caches['A2'])
+    dZ2_conv = relu_back(dA2_conv, caches['Z2'])
+    dP1, grads['W_conv2'], grads['b_conv2'] = conv2d_backward(dZ2_conv, caches['P1'], params['W_conv2'])
+
+    dA1_conv = max_pool_backward(dP1, caches['A1'])
+    dZ1_conv = relu_back(dA1_conv, caches['Z1'])
+    _, grads['W_conv1'], grads['b_conv1'] = conv2d_backward(dZ1_conv, caches['X'], params['W_conv1'])
+
+    # Clip gradients
+    grads = clip_gradients(grads, max_norm=1.0)
+    return grads
