@@ -3,7 +3,7 @@ import model
 import visualizeTraining as vt
 
 # Same for evaluation
-def evaluate_in_batches(X, y_one_hot, y_raw, params, batch_size=256):
+def evaluate_in_batches(X, y_one_hot, y_raw, params, batch_size=32):
     outputs = []
     for i in range(0, len(X), batch_size):
         X_batch = X[i:i + batch_size].reshape(-1, 1, 28, 28)

@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.signal import correlate
 
 # ------------------------------
 # Utility functions
@@ -78,31 +79,67 @@ def init_params(input_shape, conv_filters, hidden_sizes, output_size, kernel_siz
 # ------------------------------
 # Convolution helper
 # ------------------------------
+def prepVec(X, kernel_size, stride=1, padding=0):
+
+    batch, channels, H, W = X.shape
+    kh, kw = kernel_size, kernel_size
+
+    X_pad = np.pad(X, ((0,0), (0,0), (padding,padding), (padding,padding)), mode="constant")
+    H_p, W_p = X_pad.shape[2:]
+
+    out_h = (H_p - kh)//stride + 1
+    out_w = (W_p - kw)//stride + 1
+
+    patches = np.zeros((batch, out_h, out_w, channels, kh, kw), dtype=X.dtype)
+    for i in range(out_h):
+        for j in range(out_w):
+            patches[:, i, j, :, :, :] = X_pad[:, :, i*stride:i*stride+kh, j*stride:j*stride+kw]
+
+    # Reshape to (batch, out_h*out_w, channels*kh*kw)
+    patches = patches.reshape(batch, out_h*out_w, -1)
+    return patches, out_h, out_w
+
+
 def conv2d(X, W, b, stride=1, padding=0):
-    batch, in_c, h, w = X.shape
+    batch, in_c, H, W_in = X.shape
     out_c, _, kh, kw = W.shape
-    h_out = (h - kh + 2*padding)//stride + 1
-    w_out = (w - kw + 2*padding)//stride + 1
-    X_pad = np.pad(X, ((0,0),(0,0),(padding,padding),(padding,padding)), mode='constant')
-    out = np.zeros((batch, out_c, h_out, w_out), dtype=np.float32)
-    for n in range(batch):
-        for c in range(out_c):
-            for i in range(h_out):
-                for j in range(w_out):
-                    patch = X_pad[n,:, i*stride:i*stride+kh, j*stride:j*stride+kw]
-                    out[n,c,i,j] = np.sum(patch*W[c]) + b[c]
+
+    # Convert input to columns
+    X_cols, out_h, out_w = prepVec(X, kh, stride, padding)  # (batch, out_h*out_w, in_c*kh*kw)
+    W_col = W.reshape(out_c, -1)                           # (out_c, in_c*kh*kw)
+
+    # Batch matmul
+    out = X_cols @ W_col.T   # (batch, out_h*out_w, out_c)
+    out = out + b.reshape(1, 1, -1)
+
+    # Reshape back
+    out = out.transpose(0, 2, 1).reshape(batch, out_c, out_h, out_w)
+    return out
+def max_pool(X, size=2):
+    b, c, h, w = X.shape
+    assert h % size == 0 and w % size == 0, \
+        f"Shape {(h, w)} not divisible by pool size {size}"
+    h_out, w_out = h // size, w // size
+    Xr = X.reshape(b, c, h_out, size, w_out, size)
+    # Reduce both pooling axes together
+    out = Xr.max(axis=(3, 5))
     return out
 
-def max_pool(X, size=2):
-    batch, c, h, w = X.shape
-    h_out = h//size
-    w_out = w//size
-    out = np.zeros((batch,c,h_out,w_out), dtype=np.float32)
-    for i in range(h_out):
-        for j in range(w_out):
-            patch = X[:,:, i*size:i*size+size, j*size:j*size+size]
-            out[:,:,i,j] = np.max(patch, axis=(2,3))
-    return out
+def max_pool_backward(dA, A, size=2):
+    b, c, h_out, w_out = dA.shape
+    h, w = A.shape[2], A.shape[3]
+    Xr = A.reshape(b, c, h_out, size, w_out, size)
+
+    out = Xr.max(axis=(3, 5), keepdims=True) 
+    mask = (Xr == out)
+    count = mask.sum(axis=(3, 5), keepdims=True)
+    count = np.where(count == 0, 1, count)  
+
+    dXr = (mask / count) * dA[..., None, None]   
+    dX = dXr.reshape(b, c, h, w)
+    return dX
+
+
 
 # ------------------------------
 # Forward pass
@@ -171,27 +208,45 @@ def max_pool_backward(dA, A, size=2):
             dX[:, :, i*size:i*size+size, j*size:j*size+size] += mask * dA[:, :, i, j][:, :, None, None]
     return dX
 
-def conv2d_backward(dout, X, W, stride=1, padding=0):
-    batch, in_c, h, w = X.shape
-    out_c, _, kh, kw = W.shape
-    h_out, w_out = dout.shape[2], dout.shape[3]
-    X_pad = np.pad(X, ((0,0),(0,0),(padding,padding),(padding,padding)), mode='constant')
-    dX_pad = np.zeros_like(X_pad)
-    dW = np.zeros_like(W)
-    db = np.zeros_like(W[:,0,0,0])
-    for n in range(batch):
-        for c in range(out_c):
-            for i in range(h_out):
-                for j in range(w_out):
-                    patch = X_pad[n, :, i*stride:i*stride+kh, j*stride:j*stride+kw]
-                    dW[c] += dout[n, c, i, j] * patch
-                    dX_pad[n, :, i*stride:i*stride+kh, j*stride:j*stride+kw] += dout[n, c, i, j] * W[c]
-            db[c] += np.sum(dout[n, c])
+def col2im(dcols, input_shape, kernel_size, stride=1, padding=0):
+
+    b, in_c, H, W = input_shape
+    kh = kw = kernel_size
+
+    H_p, W_p = H + 2*padding, W + 2*padding
+    out_h = (H_p - kh)//stride + 1
+    out_w = (W_p - kw)//stride + 1
+
+    dcols_resh = dcols.reshape(b, out_h, out_w, in_c, kh, kw)
+    X_pad = np.zeros((b, in_c, H_p, W_p), dtype=dcols.dtype)
+
+    for i in range(out_h):
+        i0 = i*stride
+        for j in range(out_w):
+            j0 = j*stride
+            X_pad[:, :, i0:i0+kh, j0:j0+kw] += dcols_resh[:, i, j, :, :, :]
+
     if padding > 0:
-        dX = dX_pad[:, :, padding:-padding, padding:-padding]
-    else:
-        dX = dX_pad
-    return dX, dW, db
+        return X_pad[:, :, padding:-padding, padding:-padding]
+    return X_pad
+
+def conv2d_Backward(X, W, b, stride=1, padding=0):
+    bsz, in_c, h, w = X.shape
+    out_c, _, k_h, k_w = W.shape
+
+    # Pad input
+    X_padded = np.pad(X, ((0,0), (0,0), (padding,padding), (padding,padding)), mode='constant')
+    h_p, w_p = X_padded.shape[2], X_padded.shape[3]
+
+    out_h = (h_p - k_h)//stride + 1
+    out_w = (w_p - k_w)//stride + 1
+
+    X_col = prepVec(X_padded, k_h, k_w, stride)
+    W_col = W.reshape(out_c, -1)
+    out = W_col @ X_col + b.reshape(-1,1)
+    out = out.reshape(out_c, out_h, out_w, bsz).transpose(3,0,1,2)
+    return out
+
 def backward_pass(caches, params, Y):
     grads = {}
 
@@ -223,15 +278,15 @@ def backward_pass(caches, params, Y):
     dP3 = flatten_backward(dflat, caches['P3'].shape)
     dA3_conv = max_pool_backward(dP3, caches['A3'])
     dZ3_conv = relu_back(dA3_conv, caches['Z3'])
-    dP2, grads['W_conv3'], grads['b_conv3'] = conv2d_backward(dZ3_conv, caches['P2'], params['W_conv3'])
+    dP2, grads['W_conv3'], grads['b_conv3'] = conv2d_Backward(dZ3_conv, caches['P2'], params['W_conv3'])
 
     dA2_conv = max_pool_backward(dP2, caches['A2'])
     dZ2_conv = relu_back(dA2_conv, caches['Z2'])
-    dP1, grads['W_conv2'], grads['b_conv2'] = conv2d_backward(dZ2_conv, caches['P1'], params['W_conv2'])
+    dP1, grads['W_conv2'], grads['b_conv2'] = conv2d_Backward(dZ2_conv, caches['P1'], params['W_conv2'])
 
     dA1_conv = max_pool_backward(dP1, caches['A1'])
     dZ1_conv = relu_back(dA1_conv, caches['Z1'])
-    _, grads['W_conv1'], grads['b_conv1'] = conv2d_backward(dZ1_conv, caches['X'], params['W_conv1'])
+    _, grads['W_conv1'], grads['b_conv1'] = conv2d_Backward(dZ1_conv, caches['X'], params['W_conv1'])
 
     # Clip gradients
     grads = clip_gradients(grads, max_norm=1.0)

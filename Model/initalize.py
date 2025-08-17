@@ -6,7 +6,7 @@ import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Dataset used is: https://console.cloud.google.com/storage/browser/quickdraw_dataset/full/raw
-# Stored locally on computer but can be downloaded from the above link 
+# Stored locally on computer but can be downloaded from the link above  
 
 if __name__ == "__main__":
     # Set data folder path
@@ -32,15 +32,15 @@ if __name__ == "__main__":
     hidden_size = 1024
     hidden2_size = 521
     hidden3_size = 256
-    num_filters1 = 32
-    num_filters2 = 64
-    num_filters3 = 128
+    num_filters1 = 8
+    num_filters2 = 16
+    num_filters3 = 32
     output_size = len(categories)
     assert output_size > 1, f"Only {output_size} category found. Check your categories list!"
 
     learning_rate = 0.001
     epochs = 20  # Consider implementing early stopping
-    batch_size = 256
+    batch_size = 32
 
     # Train your model
     trained_params = trainModel.train_model(
