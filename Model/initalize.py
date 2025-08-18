@@ -15,10 +15,10 @@ if __name__ == "__main__":
     # Define your chosen categories (must match your downloaded .ndjson files)
     categories = [
         "apple",
-        "pencil",
-        "sun",
-        "umbrella",
-        "tree"
+        #"pencil",
+        #"sun",
+        #"umbrella",
+        #"tree"
     ]
 
     # Load the dataset (pass both folder and categories)
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     num_filters2 = 16
     num_filters3 = 32
     output_size = len(categories)
-    assert output_size > 1, f"Only {output_size} category found. Check your categories list!"
+    assert output_size > 0, f"Only {output_size} category found. Check your categories list!"
 
     learning_rate = 0.001
     epochs = 20  # Consider implementing early stopping

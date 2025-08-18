@@ -68,7 +68,7 @@ def train_model(X_train, y_train, X_test, y_test,
             # Forward pass
             caches = model.forward_pass(X_batch, params)
             # Backward pass
-            grads = model.backward_pass(caches, params, y_batch)
+            grads = model.backward_pass(X_batch, y_batch, params, caches)
             grads = model.clip_gradients(grads, 5.0)
 
             t += 1
